@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Corner Shop — catalogue</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 24px; }
+      table { border-collapse: collapse; }
+      th, td { padding: 6px 10px; border-bottom: 1px solid #ddd; text-align: left; }
+      .out { color: #a00; }
+    </style>
+  </head>
+  <body>
+    <h1>Corner Shop</h1>
+    <p id="tagline">Everyday things, cheap first.</p>
+
+    <ul id="catalogue" data-testid="catalogue">
+      <li class="product" data-sku="C-1" data-price="12.50" data-stock="out">
+        <span class="name">Gadget C</span> — <span class="price">$12.50</span>
+        <span class="stock out">out of stock</span>
+      </li>
+      <li class="product" data-sku="A-1" data-price="25.00" data-stock="in">
+        <span class="name">Widget A</span> — <span class="price">$25.00</span>
+        <span class="stock in">in stock</span>
+      </li>
+      <li class="product" data-sku="B-1" data-price="40.00" data-stock="in">
+        <span class="name">Widget B</span> — <span class="price">$40.00</span>
+        <span class="stock in">in stock</span>
+      </li>
+    </ul>
+
+    <p><a id="go-to-cart" href="/cart.html">Go to cart</a></p>
+  </body>
+</html>

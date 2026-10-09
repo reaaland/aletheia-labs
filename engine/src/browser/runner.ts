@@ -13,7 +13,6 @@
 import { mkdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { ENGINE_VERSION } from "../util/ids.ts";
-import { canonicalJson, hashHex, nowIso } from "../util/ids.ts";
 import type { Env } from "../types.ts";
 import { driverCandidates } from "./registry.ts";
 import { StepError, type BrowserHandle, type BrowserSession } from "./driver.ts";
@@ -21,6 +20,7 @@ import { evaluatePredicate, readSpec, type PredicateContext, type VarEntry } fro
 import { resolveSelector } from "./spec.ts";
 import { buildCoverage, selectedChecks } from "./coverage.ts";
 import { renderMarkdownReport } from "./render.ts";
+import { digestOutcomes } from "./digest.ts";
 import type {
   ActionRecord,
   CheckPack,
@@ -132,7 +132,7 @@ export async function runCheckPack(opts: RunnerOptions): Promise<RunnerResult> {
     requirementIds: opts.requirementIds,
   });
 
-  const outcomeDigest = digestOutcomes(results);
+  const outcomeDigest = digestOutcomes(results, { baseUrl: opts.baseUrl, artifactsDir: opts.artifactsDir, runDir });
   const run: VerificationRun = {
     kind: "verification",
     run_id: runId,
@@ -159,25 +159,12 @@ export async function runCheckPack(opts: RunnerOptions): Promise<RunnerResult> {
   return { run, markdown: renderMarkdownReport(run), executed: results.length > 0 };
 }
 
-/** sha256 over only the outcome-bearing fields: same inputs, same digest. */
-export function digestOutcomes(results: CheckResult[]): string {
-  const canonical = canonicalJson(
-    results
-      .map((r) => ({
-        check_id: r.check_id,
-        requirement_id: r.requirement_id,
-        outcome: r.outcome,
-        observed: r.observed,
-        expected: r.expected,
-        detail: r.detail,
-        error: r.error ? { step_index: r.error.step_index, op: r.error.op, message: r.error.message } : null,
-        actions: r.actions.map((a) => ({ op: a.op, selector: a.resolved_selector, value: a.value, status: a.status })),
-        reads: r.reads.map((x) => ({ name: x.name, value: x.value, url: x.url })),
-      }))
-      .sort((a, b) => a.check_id.localeCompare(b.check_id)),
-  );
-  return hashHex(canonical);
-}
+/**
+ * The outcome digest lives in ./digest.ts, which documents exactly which fields
+ * are hashed and which volatile text is normalised before they are. Re-exported
+ * here because this is where callers have always found it.
+ */
+export { digestOutcomes, digestProjection, digestScopeForRun, normalizeVolatileText, VOLATILE_TEXT_RULES } from "./digest.ts";
 
 interface CheckRunContext extends RunnerOptions {
   runId: string;

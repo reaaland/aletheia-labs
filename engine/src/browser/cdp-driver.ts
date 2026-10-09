@@ -19,6 +19,7 @@ import { dirname, join } from "node:path";
 import type { Env } from "../types.ts";
 import {
   findBrowserExecutable,
+  isTimeoutError,
   StepError,
   type BrowserHandle,
   type BrowserSession,
@@ -201,7 +202,11 @@ class CdpSession implements BrowserSession {
     } catch (err) {
       const elapsed = Date.now() - started;
       const where = selector ? ` for selector ${JSON.stringify(selector)}` : "";
-      const message = `${op} did not complete${where} within ${timeoutMs}ms: ${err instanceof Error ? err.message.split("\n")[0] : String(err)}`;
+      const detail = err instanceof Error ? err.message.split("\n")[0] : String(err);
+      // Wording depends on the CONFIGURED timeout and on what the error says,
+      // never on measured elapsed time, so two identical runs produce identical
+      // messages.
+      const message = isTimeoutError(err) ? `${op}${where} timed out after ${timeoutMs}ms: ${detail}` : `${op}${where} failed: ${detail}`;
       throw new StepError(op, selector, message, elapsed);
     }
   }

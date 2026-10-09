@@ -16,6 +16,7 @@ import type { Env } from "../types.ts";
 import {
   findBrowserExecutable,
   findPlaywrightModuleCandidates,
+  isTimeoutError,
   StepError,
   type BrowserHandle,
   type BrowserSession,
@@ -43,9 +44,20 @@ async function loadPlaywright(env: Env): Promise<any> {
   throw new Error(`no Playwright module could be loaded (${problems.join(" | ")})`);
 }
 
-function timeoutMessage(op: string, selector: string | null, detail: string, elapsedMs: number): string {
+/**
+ * Build a step-failure message.
+ *
+ * The wording depends on the CONFIGURED timeout and on what the error itself
+ * says, never on the measured elapsed time: a message that said "after 305ms" in
+ * one run and "after 306ms" in the next would make otherwise identical runs
+ * disagree, and the outcome digest is supposed to be a function of what
+ * happened, not of how long the machine took.
+ */
+function stepFailureMessage(op: string, selector: string | null, detail: string, timedOut: boolean, timeoutMs: number): string {
   const where = selector ? ` for selector ${JSON.stringify(selector)}` : "";
-  return `${op} did not complete${where} within ${elapsedMs}ms: ${detail}`;
+  return timedOut
+    ? `${op}${where} timed out after ${timeoutMs}ms: ${detail}`
+    : `${op}${where} failed: ${detail}`;
 }
 
 class PlaywrightSession implements BrowserSession {
@@ -84,7 +96,7 @@ class PlaywrightSession implements BrowserSession {
       return await fn();
     } catch (err) {
       const elapsed = Date.now() - started;
-      const message = timeoutMessage(op, selector, err instanceof Error ? err.message.split("\n")[0] : String(err), Math.max(elapsed, timeoutMs));
+      const message = stepFailureMessage(op, selector, err instanceof Error ? err.message.split("\n")[0] : String(err), isTimeoutError(err), timeoutMs);
       throw new StepError(op, selector, message, elapsed);
     }
   }
@@ -280,7 +292,8 @@ class PlaywrightBrowserHandle implements BrowserHandle {
       headless: opts.headless,
       args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
     });
-    const version = typeof browser.version === "function" ? await browser.version().catch(() => null) : null;
+    // Playwright's browser.version() is synchronous and returns a string.
+    const version = typeof browser.version === "function" ? String(browser.version()) : null;
     return new PlaywrightBrowserHandle(browser, found.path, found.source, `playwright + ${version ?? "chromium"}`);
   }
 

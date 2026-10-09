@@ -33,7 +33,7 @@ bun run research ledger list                            # recent ledger entries
 bun run research ledger show <runId>                    # one entry, verbatim
 bun run research ledger verify                          # recompute the hash chain
 bun run research rubric                                 # the rubric currently in force
-bun test                                                # 42 tests, no network, no keys
+bun test                                                # 70 tests, no network, no keys
 ```
 
 ## The demo run
@@ -251,7 +251,7 @@ the ledger records only *whether* a credential was present, never its value.
 bun test
 ```
 
-42 tests, no network access and no credentials. They cover: rubric validity and refusal of
+42 research tests, no network access and no credentials. They cover: rubric validity and refusal of
 a broken rubric; source classification by rule; deterministic, byte-identical scoring
 across repeated runs; every total equalling the weighted sum of its dimensions; recency
 and corroboration arithmetic; conflict detection and the confidence penalty it applies;
@@ -264,6 +264,22 @@ saying so; offline mode; a key-gated provider staying inert with an empty enviro
 full pipeline end to end against a local HTTP server; that the reasoning layer has exactly
 one implementation and that no file under `src/` names a model path; and that the verdict
 prose is byte-identical for identical evidence.
+
+The browser layer adds its own suites (`tests/browser.test.ts`,
+`tests/determinism.test.ts`) — a real browser against pages this repository authors
+itself, never another team's fixture. They cover: pass, fail and error in one run and the
+run continuing after an error; the coverage report and the UNVERIFIED rule; screenshots
+and traces really existing on disk; one ledger entry per run in its own hash chain; both
+drivers executing the same pack; a malformed pack being refused rather than guessed at;
+and determinism — two runs of the same pack against the same application state producing
+an identical outcome digest, on a run containing a failing and two erroring checks, with
+the volatile text classes (durations, timestamps, temp paths, heap addresses, stack
+frames) shown rewritten class by class, and the digest shown still changing when an
+observation, an outcome or a requirement binding changes.
+
+```sh
+bun test tests/determinism.test.ts     # the determinism proof on its own
+```
 
 ## Layout
 
@@ -279,9 +295,24 @@ src/
   grade/                  rubric loading/validation, extraction, clustering, conflicts, confidence
   ledger/                 append-only SQLite and Postgres backends
   render/                 Markdown report and JSON report
+  browser/                the real-browser layer
+    driver.ts             the driver interface; no driver is load-bearing
+    playwright-driver.ts  Playwright + an already-installed Chromium
+    cdp-driver.ts         raw DevTools Protocol over the runtime's own WebSocket
+    registry.ts           driver selection, by configuration
+    spec.ts               pack validation (a malformed pack is refused, not guessed at)
+    runner.ts             one session and one artifact directory per check
+    predicates.ts         the declarative expectations and what they observed
+    expr.ts               the small deterministic arithmetic evaluator
+    coverage.ts           the requirement coverage report and the UNVERIFIED rule
+    digest.ts             the outcome digest: what is hashed, and what never is
+    render.ts             the receipt, written for a non-developer
 rubric/v1.json            the rubric, as data
+checks/web-demo.json      the demo check pack (one check per requirement)
+checks/web-demo-requirements.json   the requirement set it is graded against
 fixtures/sources.ts       hand-written source documents for the tests
-tests/                    rubric, ledger, degradation and pipeline suites
+fixtures/web/             the demo application: three static pages + a local server
+tests/                    rubric, ledger, degradation, pipeline, browser and determinism suites
 demo-report.md            the recorded live demo run
 ```
 
@@ -289,3 +320,262 @@ demo-report.md            the recorded live demo run
 
 The dashboard UI, the automated outcome-verification and learning loop, and the
 software-verification workflow itself.
+
+---
+
+# Real-browser verification (executed checks, captured evidence)
+
+The engine can now make things happen in a real browser: open a URL, click,
+type, read visible text and attributes, wait for a state, assert a condition,
+capture a screenshot and record a session trace. Every claim a check makes is
+tied to an executed action and a captured file.
+
+No account, no key, no paid service, no metered call - and **no model anywhere**.
+`tests/pipeline.test.ts` still scans every file under `src/` and fails if any
+model or provider plumbing appears.
+
+## What it needs (already on this machine; nothing was downloaded)
+
+| Path | What it uses | Disk cost |
+| --- | --- | --- |
+| `playwright` driver (preferred) | the Playwright module already at `/usr/lib/node_modules/playwright` plus the Chromium already at `/opt/browsers/chromium-1248/...` (symlinked as `/usr/local/bin/chromium`) | **0 bytes added** - both were pre-installed, so no ~400 MB download |
+| `cdp` driver (fallback) | the same Chromium binary, driven over the DevTools Protocol using the runtime's own WebSocket - no third-party package at all | **0 bytes added** |
+
+Driver selection is configuration, not code: `--browser playwright|cdp|auto`
+(or `ALETHEIA_BROWSER_DRIVER`). With `auto`, each available driver is tried in
+turn and a driver that cannot start is recorded in the run's notes and skipped,
+so no single implementation is load-bearing. A browser is looked up by
+`ALETHEIA_BROWSER_EXECUTABLE` / `CHROME_PATH` first, then the standard locations,
+then the browser directories Playwright-style installs use.
+
+Uninstall either one and the layer still runs on the other. Remove both and the
+run stops with a clear message instead of pretending.
+
+**Honest limitation of the CDP driver:** it performs clicks and typing with
+scripted DOM calls (`element.click()`, setting `value` and dispatching
+`input`/`change`), not with synthesized OS-level input events the way Playwright
+does. That is enough to drive a normal form, but a page that only reacts to
+*trusted* events behaves differently there. Every trace event names the
+mechanism it used, and the run's notes repeat the caveat, so a finding never
+overstates what was done.
+
+## Run a check pack against a running app
+
+```bash
+# 1. start the app under test (the demo pages this repo authors itself)
+bun run demo:web                       # http://127.0.0.1:4287
+
+# 2. run the pack - the one documented command
+bun run verify:web
+#    equivalently, and for any app:
+bun run src/cli.ts browser run --pack checks/web-demo.json \
+    --requirements checks/web-demo-requirements.json --base-url http://127.0.0.1:4287
+```
+
+### Exit codes
+
+The runner exits non-zero as soon as anything is wrong, so a caller needs to be
+able to tell **"it ran and found problems"** from **"it could not run"** — and
+from **"it ran but something could not be executed"**, which is a different
+thing again. These are the only codes `browser run` returns:
+
+| code | what it means | exact condition |
+| --- | --- | --- |
+| `0` | ran, nothing to report | every selected check executed and passed, and no requirement was left UNVERIFIED |
+| `1` | **ran and found problems** | at least one bound check FAILED, or at least one requirement was left UNVERIFIED (no check bound to it, or its check was filtered out by `--only`) |
+| `3` | **ran, but not to completion** | at least one check could not be executed to completion (a step or an expectation ERRORED). A requirement with an ERRORED check is reported ERROR, never PASSED. Takes precedence over `1`, so a run that both failed and errored exits `3` — the coverage report and the receipt still carry both |
+| `2` | **could not run** | nothing was verified: no `--pack`, an invalid or malformed pack, no base URL, no browser driver could be started, a bad flag, or an unexpected internal error. Nothing in the run record can be read as a verdict, because there is no run record |
+
+A failing check is *not* an engine failure: a run that correctly demonstrates a
+broken application is a successful verification of a broken application, which
+is why that case is `1` and not `2`. `--json` prints the machine-readable run
+record to stdout and does not change the exit code; progress notes go to stderr,
+so `... --json --quiet | jq .outcome_digest` is a clean pipeline.
+
+```sh
+bun run verify:web; echo "exit=$?"   # 0, 1, 2 or 3 as above
+```
+
+(`bun run research ledger verify` is a separate command: it exits `1` when a
+hash chain is broken and `0` when both chains are intact.)
+
+Useful flags: `--only <ids>`, `--browser cdp`, `--no-trace`,
+`--no-screenshots`, `--headful`, `--artifacts <dir>`, `--json`, `--quiet`,
+`--no-ledger`, `--run-id <id>`.
+`bun run browser-drivers` reports which drivers this machine can run and why.
+
+## Where artifacts land
+
+Default `artifacts/browser/<runId>/` next to the ledger:
+
+```
+artifacts/browser/verify-corner-shop-web-20261009T020329-8506b0/
+  run.json                       the whole run record: outcomes, actions, reads, paths
+  report.md                      the receipt, written for a non-developer
+  coverage.json                  the requirement coverage report
+  checks/<check-id>/final.png    the page as it was when the check concluded
+  checks/<check-id>/03-<label>.png   any mid-check screenshot the pack asked for
+  checks/<check-id>/trace.zip    Playwright trace (opens in `npx playwright show-trace`)
+                                 or trace.jsonl for the CDP driver
+```
+
+Each check gets its own browser context, its own trace and its own directory, so
+two checks can never contaminate each other's evidence.
+
+## How a finding cites its evidence
+
+Every check result carries the requirement id, the outcome
+(`pass` / `fail` / `error`), the observed value, the expected value, a timestamp
+and run id, and the artifact paths. Underneath, every EXECUTED ACTION is
+recorded: the op, the selector as written in the pack, the CSS actually used, any
+value typed, the URL at the time, the status and any error. Every value read out
+of the page is recorded with the selector it came from and the URL it was on.
+
+So a line in the receipt resolves to an executed action plus an image:
+
+```json
+{
+  "check_id": "tax-is-8-5-percent-of-netted-subtotal",
+  "requirement_id": "R5",
+  "outcome": "pass",
+  "observed": "6.89 (read from [data-testid=tax])",
+  "expected": "pct(net, tax_rate) = 6.885 [net=81, tax_rate=8.5] (tolerance 0.01)",
+  "actions": [{ "index": 1, "op": "navigate", "url": "...", "status": "ok" }, ...],
+  "reads": [{ "name": "net", "value": 81, "url": "http://127.0.0.1:4287/cart.html" }],
+  "artifacts": { "screenshot": "checks/.../final.png", "trace": "checks/.../trace.zip" }
+}
+```
+
+One ledger entry per run is appended to the append-only evidence ledger
+(`ledger.verifications` / `ledger.show-verification <runId>`), referencing the
+artifact directory. Verification runs live in their own hash-chained stream next
+to research runs - same file, same append-only guarantees, separate chain -
+because a verification entry records executed checks, which is not the shape of a
+graded research answer. `bun run verify-ledger` checks both chains.
+
+## How to author a check (data, not code)
+
+A pack is JSON: `spec_version`, `pack_id`, `pack_version`, `base_url`,
+`selectors` (name -> CSS), optional `requirements`, and `checks`. Every check
+declares an `id`, the **`requirement_id` it is bound to**, a plain-language
+`description`, and ordered `steps`. A pack that omits a binding, references a
+selector that is neither declared nor recognisably CSS, or contains a broken
+formula is refused when it loads - a typo that silently checks nothing is the
+exact failure this system exists to prevent.
+
+```json
+{
+  "id": "tax-is-8-5-percent-of-netted-subtotal",
+  "requirement_id": "R5",
+  "description": "Tax is 8.5% of the subtotal after discount.",
+  "steps": [
+    { "op": "navigate", "path": "/cart.html" },
+    { "op": "type", "selector": "discountCode", "text": "SAVE10" },
+    { "op": "click", "selector": "applyDiscount" },
+    { "op": "wait_for_text", "selector": "net", "text": "$81.00" },
+    { "op": "expect", "expect": {
+        "kind": "value_equals",
+        "actual": { "selector": "tax", "as": "number", "strip": "[^0-9.]" },
+        "expected": { "expr": "pct(net, tax_rate)", "vars": {
+            "net": { "selector": "net", "as": "number", "strip": "[^0-9.]" },
+            "tax_rate": { "selector": "taxRate", "from": "attribute", "attribute": "data-rate", "as": "number" } } },
+        "tolerance": 0.01,
+        "message": "tax must be 8.5% of the discounted subtotal" } }
+  ]
+}
+```
+
+Steps: `navigate`, `click`, `type`, `wait_for`, `wait_for_text`, `read`,
+`read_many`, `expect`, `screenshot`, `note`.
+
+Expectations: `text_present`, `text_absent`, `element_visible`,
+`element_hidden`, `count_equals`, `attribute_equals`, `value_equals`,
+`value_in_range`, `cross_page_agrees` (compares the same value read on two
+different pages, and reports an ERROR if both reads happened on one page, because
+then the check did not verify what it claims), `list_order`
+(`sequence` / `ascending` / `descending`), `list_membership`, `url_matches`.
+
+Values are compared against a literal (`{"value": 87.89}`), a value read earlier
+(`{"var": "cartTotal"}`), or **arithmetic recomputed from the page's own
+numbers**: `{"expr": "pct(subtotal - discount, tax_rate)", "vars": { ... }}`.
+The expression language is a small deterministic evaluator (`+ - * / % ^`,
+parentheses, `pct`, `round`, `floor`, `ceil`, `abs`, `min`, `max`, `sum`,
+`scale`). A pack never ships JavaScript for the engine to evaluate, which is what
+keeps "same inputs, same verdict" true.
+
+## Coverage honesty
+
+The coverage report lists every requirement in the set with the checks bound to
+it and its state. **A requirement is PASSED only where a bound check actually
+executed and passed.** No check, or a check filtered out by `--only`, or a check
+that could not run: `UNVERIFIED`. A check that failed: `FAILED`. A check that
+could not execute to completion: `ERROR`, never `PASSED`. The report says this in
+its own words under `honesty`, so the file cannot be read as claiming more than
+was demonstrated.
+
+## Determinism of the outcome digest
+
+Every run records an `outcome_digest`: a sha256 over **what was observed**. The
+claim it makes is narrow and checkable — *same check pack, same application
+state, same digest* — so it is worth being precise about what goes into it.
+`digestProjection()` (`src/browser/digest.ts`) returns the exact structure that
+is hashed, and `bun test tests/determinism.test.ts` prints the proof:
+
+```sh
+bun run verify:web                       # exit 1 or 3 here: the app really is faulty
+bun run verify:web                       # same pack, same app state
+# compare the two `outcome digest:` lines
+```
+
+**Absent from the digest, by construction** — not masked, never hashed: every
+measured duration (`duration_ms`, action timings), every wall-clock timestamp
+(`started_at`, `finished_at`, read timestamps), the run id, the driver, the
+artifact paths and the artifact counts. Those all stay in `run.json`, where a
+measurement is evidence rather than identity.
+
+**Normalised before hashing**, because they are written by something other than
+this engine and vary run to run:
+
+| class | example | becomes |
+| --- | --- | --- |
+| measured durations | `Timeout 400ms exceeded`, `took 1.20s` | `<duration>` |
+| ISO-8601 timestamps | `2026-02-03T04:05:06.000Z` | `<timestamp>` |
+| `Date.toString()` timestamps | `Mon Feb 03 2026 04:05:06 GMT+0000 (…)` | `<timestamp>` |
+| bare clock times | `11:22:33` | `<time>` |
+| temporary paths | `/tmp/aletheia-cdp-L8Xq2p/Default` | `<temp-path>` |
+| heap / object addresses | `0x7ffd4a1b2c30` | `<address>` |
+| stack-frame coordinates | `app.js:42:17` | `<frame>` |
+| the origin the app was served on | `http://127.0.0.1:4287/cart.html` | `<origin>/cart.html` |
+
+Normalisation is applied to the fields **this engine wrote about the run**
+(`detail`, `error.message`, the per-action error) and to URLs and action values.
+It is deliberately *not* applied to `observed`, to `expected`, or to the values
+read out of the page: those are the evidence, and two runs whose observations
+differed did not observe the same thing.
+
+That boundary has one consequence worth stating plainly, because it is the one
+case where a digest will differ between two runs that both "passed":
+**an application that renders a clock (or any other run-varying text) into a
+value a check reads will produce a different digest on every run, and that is
+the honest answer** — the observed evidence really did differ. The digest
+refuses to call two different observations the same. What it will not do is let
+a *timer* inside the engine change the verdict of an otherwise identical run;
+the drivers word a timeout from the configured timeout and from what the error
+says, never from a measured elapsed time, which is what previously made an
+identical run word its message two different ways.
+
+The proof in `tests/determinism.test.ts` runs the same pack twice with the
+**real clock** (nothing stubbed) against the same application state, on a run
+containing one passing, one **failing** and two **erroring** checks (one whose
+step cannot be executed, one whose expectation cannot be evaluated), and shows:
+
+1. the two run records genuinely differ — different run ids, timestamps,
+   durations and artifact directories — **and** the two outcome digests are
+   byte-identical;
+2. a third run of the same state served on a **different port** produces the
+   same digest again, so the digest does not depend on where the app was served;
+3. the digest is still sensitive: changing an observed value, an outcome, or a
+   requirement binding changes it, and page text that merely *looks* like a
+   timestamp is not collapsed;
+4. each volatile class above is rewritten to its marker, with the duration the
+   driver actually wrote still present verbatim in `run.json`.

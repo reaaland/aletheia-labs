@@ -54,6 +54,13 @@ BROWSER VERIFICATION (real browser, local, zero cost)
       --no-screenshots       Do not capture screenshots.
       --headful              Run the browser with a visible window.
 
+  Exit codes (so "found problems" is never confused with "could not run"):
+    0  ran, every selected check passed and no requirement was left UNVERIFIED
+    1  ran and found problems: a check failed, or a requirement was unverified
+    3  ran, but a check could not be executed to completion (ERROR, not PASSED;
+       takes precedence over 1)
+    2  could not run at all: bad pack, no base URL, no browser driver, bad usage
+
 ENVIRONMENT (all optional; nothing here is required to run)
   ALETHEIA_DB, ALETHEIA_RUBRIC, ALETHEIA_RETRIEVAL,
   ALETHEIA_TIMEOUT_MS, ALETHEIA_MAX_SOURCES, ALETHEIA_PER_ADAPTER_LIMIT,
@@ -248,14 +255,43 @@ async function main(): Promise<number> {
         process.stdout.write(`${JSON.stringify(entry, null, 2)}\n`);
         return 0;
       }
+      if (sub === "verifications") {
+        const limit = Number(rest[1] ?? 20);
+        const rows = await ledger.listVerifications(Number.isFinite(limit) ? limit : 20);
+        const total = await ledger.countVerifications();
+        process.stdout.write(`verification runs in the ${ledger.backend} ledger at ${ledger.location} - ${total} entr${total === 1 ? "y" : "ies"}\n\n`);
+        if (rows.length === 0) process.stdout.write("(none)\n");
+        for (const r of rows) {
+          process.stdout.write(
+            `${r.seq}\t${r.timestamp}\t${r.pack_id}@${r.pack_version}\t${r.driver}\tchecks ${r.checks.passed}P/${r.checks.failed}F/${r.checks.errored}E of ${r.checks.total}\tunverified reqs ${r.requirements.unverified}/${r.requirements.total}\t${r.run_id}\n`,
+          );
+        }
+        return 0;
+      }
+      if (sub === "show-verification") {
+        const runId = rest[1];
+        if (!runId) {
+          process.stderr.write("usage: bun run research ledger show-verification <runId>\n");
+          return 2;
+        }
+        const entry = await ledger.getVerification(runId);
+        if (!entry) {
+          process.stderr.write(`no verification run with run id ${runId}\n`);
+          return 2;
+        }
+        process.stdout.write(`${JSON.stringify(entry, null, 2)}\n`);
+        return 0;
+      }
       if (sub === "verify") {
-        const result = await ledger.verifyChain();
+        const research = await ledger.verifyChain();
+        const verification = await ledger.verifyVerificationChain();
+        const ok = research.ok && verification.ok;
         process.stdout.write(
-          result.ok
-            ? `OK: ${result.checked} entr${result.checked === 1 ? "y" : "ies"} verified, hash chain intact (${ledger.backend} at ${ledger.location})\n`
-            : `BROKEN at seq ${result.brokenAtSeq} (run ${result.brokenAtRunId}): ${result.reason}\n`,
+          ok
+            ? `OK: ${research.checked} research entr${research.checked === 1 ? "y" : "ies"} and ${verification.checked} verification entr${verification.checked === 1 ? "y" : "ies"} verified, both hash chains intact (${ledger.backend} at ${ledger.location})\n`
+            : `BROKEN in the ${research.ok ? "verification" : "research"} chain at seq ${research.ok ? verification.brokenAtSeq : research.brokenAtSeq} (run ${research.ok ? verification.brokenAtRunId : research.brokenAtRunId}): ${research.ok ? verification.reason : research.reason}\n`,
         );
-        return result.ok ? 0 : 1;
+        return ok ? 0 : 1;
       }
       process.stderr.write(`unknown ledger subcommand "${sub}"\n`);
       return 2;
@@ -329,6 +365,10 @@ async function main(): Promise<number> {
 main()
   .then((code) => process.exit(code))
   .catch((err) => {
+    // An unexpected exception means the engine could not do its job, so it exits
+    // 2 -- the same code as a bad pack or a browser that will not start. Exit 1
+    // is reserved for a run that completed and found problems, so a caller can
+    // never mistake a crash for a finding.
     process.stderr.write(`fatal: ${err instanceof Error ? err.stack ?? err.message : String(err)}\n`);
-    process.exit(1);
+    process.exit(2);
   });
