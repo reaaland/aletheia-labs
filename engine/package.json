@@ -1,0 +1,19 @@
+{
+  "name": "aletheia-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Aletheia Labs research-and-verification core: provider-agnostic retrieval, evidence grading, append-only ledger.",
+  "module": "src/cli.ts",
+  "scripts": {
+    "research": "bun run src/cli.ts",
+    "test": "bun test",
+    "adapters": "bun run src/cli.ts adapters",
+    "verify-ledger": "bun run src/cli.ts ledger verify"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "engines": {
+    "bun": ">=1.1.0"
+  }
+}

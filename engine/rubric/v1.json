@@ -1,0 +1,531 @@
+{
+  "$comment": "Aletheia Labs evidence-grading rubric. Versioned data file. Dimensions are weighted; weights MUST sum to 1.0. Every dimension lists the exact raw inputs a human needs to recompute a score by hand. Editing this file is how you change the rubric -- never change scoring in code.",
+  "id": "aletheia-rubric",
+  "version": "1.0.0",
+  "released": "2026-10-09",
+  "weightsSum": 1.0,
+  "dimensions": {
+    "sourceClass": {
+      "weight": 0.35,
+      "kind": "categorical",
+      "question": "How authoritative is the channel that made this claim?",
+      "scale": {
+        "standards_spec": 1.0,
+        "primary_documentation": 0.9,
+        "first_party_changelog": 0.8,
+        "vendor_blog": 0.6,
+        "qa_forum": 0.4,
+        "aggregator": 0.3,
+        "unknown": 0.2
+      },
+      "unknownKey": "unknown",
+      "recompute": "Look up scores[sourceClass].ruleId from sourceClassRules, read the class, then read scale[class]."
+    },
+    "corroboration": {
+      "weight": 0.25,
+      "kind": "numeric",
+      "question": "How many *independent* sources assert this same proposition?",
+      "independentBy": "registrable_domain",
+      "curve": {
+        "type": "step_by_independent_domains",
+        "points": [
+          {
+            "domains": 0,
+            "score": 0.0
+          },
+          {
+            "domains": 1,
+            "score": 0.35
+          },
+          {
+            "domains": 2,
+            "score": 0.7
+          },
+          {
+            "domains": 3,
+            "score": 0.9
+          },
+          {
+            "domains": 4,
+            "score": 1.0
+          }
+        ],
+        "above": 1.0
+      },
+      "recompute": "Count distinct registrable domains among claims in the same cluster AND the same polarity. Read curve.points for that count (values above the last point use 'above')."
+    },
+    "recency": {
+      "weight": 0.2,
+      "kind": "numeric",
+      "question": "How fresh is the evidence?",
+      "curve": {
+        "type": "exponential_decay",
+        "halfLifeDays": 540,
+        "floor": 0.1
+      },
+      "unknownScore": 0.35,
+      "recompute": "ageDays = (runDate - sourceDate) in days. score = max(floor, 0.5 ^ (ageDays / halfLifeDays)). If the source has no date, score = unknownScore and inputs.dateSource = 'unknown'."
+    },
+    "specificity": {
+      "weight": 0.2,
+      "kind": "numeric",
+      "question": "Does the claim say something concrete enough to be checked?",
+      "signals": {
+        "versionToken": 0.3,
+        "identifierToken": 0.25,
+        "dateToken": 0.2,
+        "urlToken": 0.15,
+        "numericToken": 0.1
+      },
+      "cap": 1.0,
+      "recompute": "Add the weight of every signal present in the claim text, cap at cap. inputs.matchedSignals lists exactly which signals fired."
+    }
+  },
+  "sourceClassRules": {
+    "$comment": "Ordered, first match wins. Applies to the source URL. host = lowercase hostname; path = full path. Rules are data, so a human can audit why a source got its class. 'upgrade' rules run first and override a later match.",
+    "upgrade": [
+      {
+        "id": "spec-ietf",
+        "class": "standards_spec",
+        "host": "(^|\\.)(rfc-editor\\.org|ietf\\.org|w3\\.org|iso\\.org|ecma-international\\.org|unicode\\.org|whatwg\\.org)$"
+      },
+      {
+        "id": "spec-path-tr",
+        "class": "standards_spec",
+        "host": "(^|\\.)(w3\\.org)$",
+        "path": "^/TR/"
+      },
+      {
+        "id": "changelog-path",
+        "class": "first_party_changelog",
+        "path": "(changelog|releases?|CHANGES|NEWS)"
+      },
+      {
+        "id": "official-docs-host",
+        "class": "primary_documentation",
+        "host": "(^|\\.)(nodejs\\.org|docs\\.python\\.org|developer\\.mozilla\\.org|go\\.dev|doc\\.rust-lang\\.org|kernel\\.org|postgresql\\.org|docs\\.docker\\.com|kubernetes\\.io|man7\\.org|openssl\\.org|nginx\\.org)$"
+      },
+      {
+        "id": "docs-subdomain",
+        "class": "primary_documentation",
+        "host": "^docs?\\."
+      },
+      {
+        "id": "registry-host",
+        "class": "primary_documentation",
+        "host": "(^|\\.)(registry\\.npmjs\\.com|npmjs\\.com|pypi\\.org|files\\.pythonhosted\\.org|search\\.maven\\.org|crates\\.io|rubygems\\.org|packagist\\.org)$"
+      },
+      {
+        "id": "vcs-host",
+        "class": "primary_documentation",
+        "host": "(^|\\.)(github\\.com|gitlab\\.com|codeberg\\.org|sourcehut\\.org|api\\.github\\.com)$"
+      },
+      {
+        "id": "qa-host",
+        "class": "qa_forum",
+        "host": "(^|\\.)(stackoverflow\\.com|stackexchange\\.com|superuser\\.com|serverfault\\.com|askubuntu\\.com|reddit\\.com|news\\.ycombinator\\.com|discourse\\.|discuss\\.)"
+      },
+      {
+        "id": "vendor-blog-host",
+        "class": "vendor_blog",
+        "host": "(^|\\.)(medium\\.com|dev\\.to|substack\\.com|hashnode\\.dev|infoq\\.com|thenewstack\\.io)$"
+      },
+      {
+        "id": "vendor-blog-path",
+        "class": "vendor_blog",
+        "path": "/(blog|blogs|news|press)/"
+      },
+      {
+        "id": "aggregator-host",
+        "class": "aggregator",
+        "host": "(^|\\.)(wikipedia\\.org|wikidata\\.org|hn\\.algolia\\.com|marginalia-search\\.com|search\\.marginalia\\.nu|stackexchange\\.com)$"
+      }
+    ],
+    "default": "unknown",
+    "notes": [
+      "A first_party_changelog is a release note published by the project that owns the software, so it ranks below stable reference docs but above a blog post.",
+      "Rule ids are recorded verbatim on every source, so any class assignment can be traced."
+    ]
+  },
+  "clustering": {
+    "jaccardThreshold": 0.3,
+    "minSharedSignificantTerms": 2,
+    "stopwords": [
+      "the",
+      "a",
+      "an",
+      "and",
+      "or",
+      "but",
+      "if",
+      "then",
+      "than",
+      "that",
+      "this",
+      "these",
+      "those",
+      "is",
+      "are",
+      "was",
+      "were",
+      "be",
+      "been",
+      "being",
+      "am",
+      "do",
+      "does",
+      "did",
+      "doing",
+      "have",
+      "has",
+      "had",
+      "having",
+      "it",
+      "its",
+      "as",
+      "at",
+      "by",
+      "for",
+      "from",
+      "in",
+      "into",
+      "of",
+      "on",
+      "onto",
+      "to",
+      "with",
+      "without",
+      "you",
+      "your",
+      "we",
+      "our",
+      "they",
+      "their",
+      "he",
+      "she",
+      "his",
+      "her",
+      "them",
+      "i",
+      "me",
+      "my",
+      "not",
+      "no",
+      "so",
+      "such",
+      "can",
+      "could",
+      "will",
+      "would",
+      "shall",
+      "should",
+      "may",
+      "might",
+      "must",
+      "there",
+      "here",
+      "when",
+      "where",
+      "which",
+      "who",
+      "whom",
+      "what",
+      "why",
+      "how",
+      "all",
+      "any",
+      "both",
+      "each",
+      "few",
+      "more",
+      "most",
+      "other",
+      "some",
+      "only",
+      "own",
+      "same",
+      "too",
+      "very",
+      "just",
+      "also",
+      "about",
+      "after",
+      "before",
+      "between",
+      "during",
+      "under",
+      "over",
+      "again",
+      "further",
+      "once",
+      "because",
+      "while",
+      "however",
+      "therefore",
+      "us",
+      "use",
+      "used",
+      "using",
+      "see",
+      "also",
+      "one",
+      "two",
+      "new",
+      "get",
+      "gets",
+      "make",
+      "makes",
+      "made",
+      "like",
+      "well",
+      "still",
+      "even",
+      "much",
+      "many",
+      "way",
+      "thing",
+      "things"
+    ],
+    "minTokensPerClaim": 4,
+    "minCharsPerClaim": 40
+  },
+  "claimExtraction": {
+    "assertionCues": [
+      "deprecat",
+      "replac",
+      "remov",
+      "renam",
+      "introduc",
+      "support",
+      "requir",
+      "no longer",
+      "breaking change",
+      "migrat",
+      "recommend",
+      "instead of",
+      "in favour of",
+      "in favor of",
+      "bug",
+      "fixed",
+      "fixes",
+      "should",
+      "must",
+      "will be",
+      "is now",
+      "has been",
+      "continues to",
+      "must not",
+      "does not",
+      "cannot",
+      "fails",
+      "throws",
+      "returns",
+      "defaults to",
+      "since version",
+      "as of"
+    ],
+    "negationCues": [
+      "not deprecated",
+      "isn't deprecated",
+      "is not deprecated",
+      "no longer deprecated",
+      "un-deprecat",
+      "undeprecat",
+      "not removed",
+      "was not removed",
+      "isn't removed",
+      "not required",
+      "isn't required",
+      "is not required",
+      "no need to",
+      "does not need",
+      "doesn't need",
+      "never deprecated",
+      "reverted",
+      "revert",
+      "myth",
+      "rumou?r",
+      "falsely",
+      "incorrect",
+      "not true",
+      "no longer applies",
+      "does not exist",
+      "doesn't exist"
+    ],
+    "specificitySignals": {
+      "versionToken": "\\bv?\\d+\\.\\d+(?:\\.\\d+)?(?:[-+][A-Za-z0-9.]+)?\\b|\\bDEP\\d{4}\\b|\\bCVE-\\d{4}-\\d+\\b",
+      "identifierToken": "`[^`]+`|\\b[a-zA-Z_][a-zA-Z0-9_]*(?:\\.[a-zA-Z_][a-zA-Z0-9_]*)+\\b|\\b[a-z][a-z0-9]*(?:-[a-z0-9]+)+\\b",
+      "dateToken": "\\b(19|20)\\d{2}-\\d{2}(-\\d{2})?\\b|\\b(January|February|March|April|May|June|July|August|September|October|November|December)\\s+\\d{1,2},?\\s+(19|20)\\d{2}\\b",
+      "urlToken": "https?://\\S+",
+      "numericToken": "\\b\\d+(\\.\\d+)?%?\\b"
+    },
+    "boilerplateCues": [
+      "cookie",
+      "privacy policy",
+      "terms of service",
+      "sign in",
+      "log in",
+      "skip to",
+      "newsletter",
+      "subscribe",
+      "advertisement",
+      "all rights reserved",
+      "javascript is disabled",
+      "enable javascript",
+      "browser support",
+      "table of contents",
+      "report a problem",
+      "view in english",
+      "was this page helpful",
+      "you may also",
+      "compatible licens",
+      "creative commons",
+      "marking guide",
+      "return to reference",
+      "share this",
+      "follow us",
+      "accept all cookies",
+      "\u00a9 ",
+      "site map",
+      "accessibility",
+      "community guidelines",
+      "related articles"
+    ]
+  },
+  "conflictPolicy": {
+    "rule": "surface_never_average",
+    "statement": "When independent sources disagree about the same proposition the disagreement is reported as a conflict with both sides quoted. The engine never averages opposing claims into a single number; the losing side is carried in the report as dissent.",
+    "confidencePenaltyPerConflict": 0.12,
+    "maxConfidencePenalty": 0.5,
+    "valueConflictPenaltyPerConflict": 0.06
+  },
+  "confidenceModel": {
+    "$comment": "Deterministic. The reasoner supplies prose only; every number below is computed here from recorded inputs so a human can recompute the confidence by hand.",
+    "base": "primary_group_score",
+    "factors": {
+      "coverage": {
+        "type": "step_by_independent_domains",
+        "points": [
+          {
+            "domains": 0,
+            "factor": 0.4
+          },
+          {
+            "domains": 1,
+            "factor": 0.7
+          },
+          {
+            "domains": 2,
+            "factor": 0.9
+          },
+          {
+            "domains": 3,
+            "factor": 1.0
+          }
+        ],
+        "above": 1.0
+      },
+      "authority": {
+        "type": "categorical_floor",
+        "statement": "If no supporting claim comes from primary_documentation, standards_spec or first_party_changelog, the score is multiplied by this factor.",
+        "noAuthoritativeSourceFactor": 0.75
+      },
+      "retrieval": {
+        "type": "availability",
+        "statement": "If more than a third of the configured retrieval adapters were unavailable or failed, the score is multiplied by this factor.",
+        "unavailableRatioThreshold": 0.34,
+        "degradedFactor": 0.8
+      }
+    },
+    "bands": [
+      {
+        "min": 0.8,
+        "label": "high"
+      },
+      {
+        "min": 0.6,
+        "label": "moderate"
+      },
+      {
+        "min": 0.4,
+        "label": "low"
+      },
+      {
+        "min": 0.0,
+        "label": "very_low"
+      }
+    ]
+  },
+  "reporting": {
+    "maxClaimsPerGroup": 6,
+    "maxSourcesShown": 24,
+    "citationStyle": "[S<n>]"
+  },
+  "selection": {
+    "$comment": "How the engine picks the group of claims that forms the verdict. Relevance to the question is a gate, not a tiebreaker: an irrelevant claim is never the answer no matter how well sourced it is.",
+    "rankKey": "relevance * score",
+    "relevanceDefinition": "max over the group's claims of questionOverlap, where questionOverlap = |claim terms \u2229 question terms| / |question terms| after stopword removal and light stemming",
+    "requireRelevanceAbove": 0.0,
+    "tieBreak": [
+      "score",
+      "independentDomainCount",
+      "clusterId"
+    ],
+    "genericQueryTerms": [
+      "module",
+      "modules",
+      "package",
+      "packages",
+      "deprecat",
+      "deprecated",
+      "replace",
+      "replacement",
+      "built-in",
+      "builtin",
+      "node.js",
+      "nodejs",
+      "node",
+      "npm",
+      "version",
+      "support",
+      "change",
+      "changes",
+      "bug",
+      "bugs",
+      "fix",
+      "fixes",
+      "api",
+      "code",
+      "library",
+      "libraries",
+      "feature",
+      "features",
+      "error",
+      "errors",
+      "using",
+      "install",
+      "update",
+      "upgrade",
+      "migrate",
+      "recommend",
+      "official",
+      "documentation",
+      "docs",
+      "release",
+      "latest",
+      "current",
+      "still",
+      "really",
+      "actually",
+      "available",
+      "default",
+      "defaults",
+      "work",
+      "works",
+      "working",
+      "usage",
+      "example",
+      "examples"
+    ]
+  }
+}

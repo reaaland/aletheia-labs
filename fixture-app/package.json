@@ -1,0 +1,15 @@
+{
+  "name": "order-desk",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Order desk for a small wholesale coffee roastery: orders, line items, discounts, shipping and tax.",
+  "scripts": {
+    "start": "bun run server.ts",
+    "dev": "bun run --watch server.ts",
+    "test": "bun test"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  }
+}
