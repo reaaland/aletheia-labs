@@ -1,0 +1,268 @@
+{
+  "spec_version": 1,
+  "pack_id": "corner-shop-web",
+  "pack_version": "1.0.0",
+  "description": "Browser checks for the demo shop pages this repository authors itself (fixtures/web). Data only: no code, no model, no key.",
+  "base_url": "http://127.0.0.1:4287",
+  "app_version": "demo",
+  "selectors": {
+    "catalogueList": "#catalogue",
+    "catalogueItems": "#catalogue li.product",
+    "productName": ".name",
+    "subtotal": "[data-testid=subtotal]",
+    "discount": "[data-testid=discount]",
+    "net": "[data-testid=net]",
+    "tax": "[data-testid=tax]",
+    "total": "[data-testid=total]",
+    "taxRate": "[data-testid=tax-rate]",
+    "discountRate": "[data-testid=discount-rate]",
+    "discountCode": "#discount-code",
+    "applyDiscount": "#apply-discount",
+    "lineTotalA": "[data-testid=line-total-A]",
+    "lineTotalB": "[data-testid=line-total-B]",
+    "checkoutLink": "#checkout",
+    "confirmation": "[data-testid=confirmation]",
+    "orderId": "[data-testid=order-id]",
+    "checkoutBlocked": "[data-testid=checkout-blocked]"
+  },
+  "checks": [
+    {
+      "id": "catalogue-cheapest-first",
+      "requirement_id": "R1",
+      "description": "The catalogue lists products with the cheapest first.",
+      "steps": [
+        { "op": "navigate", "path": "/index.html", "note": "open the catalogue" },
+        {
+          "op": "expect",
+          "expect": {
+            "kind": "list_order",
+            "selector": "catalogueItems",
+            "mode": "ascending",
+            "item": { "sub_selector": ".price", "as": "number", "strip": "[^0-9.]" },
+            "message": "the prices must not decrease down the list"
+          }
+        }
+      ]
+    },
+    {
+      "id": "catalogue-shows-every-product",
+      "requirement_id": "R2",
+      "description": "The catalogue lists all three products, including the out-of-stock one.",
+      "steps": [
+        { "op": "navigate", "path": "/index.html" },
+        {
+          "op": "expect",
+          "expect": {
+            "kind": "list_membership",
+            "selector": "catalogueItems",
+            "item": { "sub_selector": ".name" },
+            "contains": ["Gadget C", "Widget A", "Widget B"],
+            "message": "every product, in or out of stock, must be listed"
+          }
+        }
+      ]
+    },
+    {
+      "id": "subtotal-is-sum-of-line-totals",
+      "requirement_id": "R3",
+      "description": "The subtotal is recomputed from the line totals shown on the same page.",
+      "steps": [
+        { "op": "navigate", "path": "/cart.html", "note": "open the cart with its default lines" },
+        {
+          "op": "expect",
+          "expect": {
+            "kind": "value_equals",
+            "actual": { "selector": "subtotal", "from": "text", "as": "number", "strip": "[^0-9.]" },
+            "expected": {
+              "expr": "line_a + line_b",
+              "vars": {
+                "line_a": { "selector": "lineTotalA", "from": "text", "as": "number", "strip": "[^0-9.]" },
+                "line_b": { "selector": "lineTotalB", "from": "text", "as": "number", "strip": "[^0-9.]" }
+              }
+            },
+            "tolerance": 0.005,
+            "message": "the subtotal must equal the two line totals added together"
+          }
+        }
+      ]
+    },
+    {
+      "id": "discount-is-advertised-percent",
+      "requirement_id": "R4",
+      "description": "Applying SAVE10 takes 10% off the subtotal, and the discounted subtotal reflects it.",
+      "steps": [
+        { "op": "navigate", "path": "/cart.html" },
+        { "op": "type", "selector": "discountCode", "text": "SAVE10", "note": "enter the advertised code" },
+        { "op": "click", "selector": "applyDiscount", "note": "apply the code" },
+        { "op": "wait_for_text", "selector": "discount", "text": "$9.00", "note": "the discount is applied" },
+        {
+          "op": "expect",
+          "expect": {
+            "kind": "value_equals",
+            "actual": { "selector": "discount", "from": "text", "as": "number", "strip": "[^0-9.]" },
+            "expected": {
+              "expr": "pct(subtotal, discount_rate)",
+              "vars": {
+                "subtotal": { "selector": "subtotal", "from": "text", "as": "number", "strip": "[^0-9.]" },
+                "discount_rate": { "selector": "discountRate", "from": "attribute", "attribute": "data-rate", "as": "number" }
+              }
+            },
+            "tolerance": 0.005,
+            "message": "the discount must be the advertised percentage of the subtotal"
+          }
+        },
+        {
+          "op": "expect",
+          "expect": {
+            "kind": "value_equals",
+            "actual": { "selector": "net", "from": "text", "as": "number", "strip": "[^0-9.]" },
+            "expected": {
+              "expr": "subtotal - discount",
+              "vars": {
+                "subtotal": { "selector": "subtotal", "from": "text", "as": "number", "strip": "[^0-9.]" },
+                "discount": { "selector": "discount", "from": "text", "as": "number", "strip": "[^0-9.]" }
+              }
+            },
+            "tolerance": 0.005,
+            "message": "the discounted subtotal must be the subtotal minus the discount"
+          }
+        }
+      ]
+    },
+    {
+      "id": "tax-is-8-5-percent-of-netted-subtotal",
+      "requirement_id": "R5",
+      "description": "Tax is recomputed as 8.5% of the subtotal after discount, using the rate the page itself declares.",
+      "steps": [
+        { "op": "navigate", "path": "/cart.html" },
+        { "op": "type", "selector": "discountCode", "text": "SAVE10" },
+        { "op": "click", "selector": "applyDiscount" },
+        { "op": "wait_for_text", "selector": "net", "text": "$81.00" },
+        {
+          "op": "expect",
+          "expect": {
+            "kind": "value_equals",
+            "actual": { "selector": "tax", "from": "text", "as": "number", "strip": "[^0-9.]" },
+            "expected": {
+              "expr": "pct(net, tax_rate)",
+              "vars": {
+                "net": { "selector": "net", "from": "text", "as": "number", "strip": "[^0-9.]" },
+                "tax_rate": { "selector": "taxRate", "from": "attribute", "attribute": "data-rate", "as": "number" }
+              }
+            },
+            "tolerance": 0.01,
+            "message": "tax must be 8.5% of the discounted subtotal (0.01 tolerance covers the page's 2dp rounding)"
+          }
+        }
+      ]
+    },
+    {
+      "id": "total-is-net-plus-tax",
+      "requirement_id": "R6",
+      "description": "The total is the discounted subtotal plus the tax shown on the page.",
+      "steps": [
+        { "op": "navigate", "path": "/cart.html" },
+        { "op": "type", "selector": "discountCode", "text": "SAVE10" },
+        { "op": "click", "selector": "applyDiscount" },
+        { "op": "wait_for_text", "selector": "net", "text": "$81.00" },
+        {
+          "op": "expect",
+          "expect": {
+            "kind": "value_equals",
+            "actual": { "selector": "total", "from": "text", "as": "number", "strip": "[^0-9.]" },
+            "expected": {
+              "expr": "net + tax",
+              "vars": {
+                "net": { "selector": "net", "from": "text", "as": "number", "strip": "[^0-9.]" },
+                "tax": { "selector": "tax", "from": "text", "as": "number", "strip": "[^0-9.]" }
+              }
+            },
+            "tolerance": 0.005,
+            "message": "the total must be the discounted subtotal plus tax"
+          }
+        }
+      ]
+    },
+    {
+      "id": "cart-total-agrees-across-pages",
+      "requirement_id": "R7",
+      "description": "The total on the cart page is the same as the total on the checkout page.",
+      "steps": [
+        { "op": "navigate", "path": "/cart.html" },
+        { "op": "read", "name": "cartTotal", "selector": "total", "from": "text", "as": "number", "strip": "[^0-9.]", "note": "read the total on the cart page" },
+        { "op": "click", "selector": "checkoutLink", "note": "go to the checkout page" },
+        { "op": "wait_for", "selector": "orderId", "state": "visible" },
+        { "op": "read", "name": "checkoutTotal", "selector": "total", "from": "text", "as": "number", "strip": "[^0-9.]", "note": "read the total on the checkout page" },
+        {
+          "op": "expect",
+          "expect": {
+            "kind": "cross_page_agrees",
+            "left": { "var": "cartTotal" },
+            "right": { "var": "checkoutTotal" },
+            "tolerance": 0.005,
+            "message": "the two pages must show the same total"
+          }
+        }
+      ]
+    },
+    {
+      "id": "checkout-shows-confirmation",
+      "requirement_id": "R8",
+      "description": "Reaching the checkout page shows a confirmation message and an order id.",
+      "steps": [
+        { "op": "navigate", "path": "/cart.html" },
+        { "op": "click", "selector": "checkoutLink" },
+        { "op": "wait_for", "selector": "confirmation", "state": "visible" },
+        {
+          "op": "expect",
+          "expect": { "kind": "text_present", "selector": "confirmation", "text": "Order placed", "message": "a confirmation must be shown" }
+        },
+        {
+          "op": "expect",
+          "expect": { "kind": "text_present", "selector": "orderId", "text": "ORD-", "message": "an order id must be shown" }
+        }
+      ]
+    },
+    {
+      "id": "no-error-when-valid-code",
+      "requirement_id": "R9",
+      "description": "A valid code shows no error message anywhere on the page.",
+      "steps": [
+        { "op": "navigate", "path": "/cart.html" },
+        { "op": "type", "selector": "discountCode", "text": "SAVE10" },
+        { "op": "click", "selector": "applyDiscount" },
+        { "op": "wait_for_text", "selector": "net", "text": "$81.00" },
+        {
+          "op": "expect",
+          "expect": { "kind": "text_absent", "text": "Invalid discount code", "message": "no error message may appear when the code is valid" }
+        }
+      ]
+    },
+    {
+      "id": "free-shipping-message",
+      "requirement_id": "R10",
+      "description": "With a discounted subtotal over $50, the page tells the customer shipping is free.",
+      "steps": [
+        { "op": "navigate", "path": "/cart.html" },
+        { "op": "type", "selector": "discountCode", "text": "SAVE10" },
+        { "op": "click", "selector": "applyDiscount" },
+        { "op": "wait_for_text", "selector": "net", "text": "$81.00" },
+        {
+          "op": "expect",
+          "expect": { "kind": "text_present", "text": "Free shipping", "message": "orders over $50 must be told shipping is free" }
+        }
+      ]
+    },
+    {
+      "id": "checkout-blocked-until-valid",
+      "requirement_id": "R11",
+      "description": "The page indicates that checkout is blocked while the cart is invalid.",
+      "steps": [
+        { "op": "navigate", "path": "/cart.html" },
+        { "op": "type", "selector": "discountCode", "text": "NOT-A-CODE", "note": "make the cart invalid first" },
+        { "op": "click", "selector": "applyDiscount" },
+        { "op": "wait_for", "selector": "checkoutBlocked", "state": "visible", "timeout_ms": 1200, "note": "the page must expose the blocked state" }
+      ]
+    }
+  ]
+}

@@ -76,6 +76,24 @@ export class StepError extends Error {
   }
 }
 
+/**
+ * Did this failure happen because the operation ran out of time, or for some
+ * other reason? The distinction is worded into the message a step failure
+ * produces, so it has to be decided from the ERROR ITSELF and never from a
+ * measured elapsed time: an operation that timed out at 399ms on one run and
+ * 400ms on the next would otherwise have its message worded two different ways,
+ * and two otherwise identical runs would disagree.
+ *
+ * `elapsedMs` is still recorded on the StepError -- as a measurement, in the run
+ * record, where a measurement belongs.
+ */
+export function isTimeoutError(err: unknown): boolean {
+  const name = (err as { name?: unknown } | null | undefined)?.name;
+  if (name === "TimeoutError") return true;
+  const message = err instanceof Error ? err.message : String(err);
+  return /timeout|timed out|never became|never appeared/i.test(message);
+}
+
 export interface SessionOptions {
   /** Where screenshots and traces for this session are written. */
   artifactDir: string;

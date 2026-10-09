@@ -9,7 +9,11 @@
     "research": "bun run src/cli.ts",
     "test": "bun test",
     "adapters": "bun run src/cli.ts adapters",
-    "verify-ledger": "bun run src/cli.ts ledger verify"
+    "verify-ledger": "bun run src/cli.ts ledger verify",
+    "verify:web": "bun run src/cli.ts browser run --pack checks/web-demo.json --requirements checks/web-demo-requirements.json",
+    "verify:web:cdp": "bun run src/cli.ts browser run --pack checks/web-demo.json --requirements checks/web-demo-requirements.json --browser cdp",
+    "browser-drivers": "bun run src/cli.ts browser drivers",
+    "demo:web": "bun run fixtures/web/serve.ts"
   },
   "dependencies": {},
   "devDependencies": {},

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Corner Shop — checkout</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 24px; }
+      .total { font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <h1>Checkout</h1>
+    <p id="confirmation" data-testid="confirmation">Order placed — thank you</p>
+    <p>Order <span id="order-id" data-testid="order-id">ORD-1042</span></p>
+    <table>
+      <tbody>
+        <tr><td>Subtotal</td><td id="subtotal" data-testid="subtotal">$90.00</td></tr>
+        <tr><td>Discount</td><td id="discount" data-testid="discount">$0.00</td></tr>
+        <tr><td>Tax</td><td id="tax" data-testid="tax">$7.65</td></tr>
+        <tr><td>Total</td><td id="total" data-testid="total" class="total">$97.65</td></tr>
+      </tbody>
+    </table>
+    <p><a id="back-to-cart" href="/cart.html">Back to cart</a></p>
+    <script>
+      // The checkout page shows what the cart recorded, so a check can compare
+      // the same number across two pages.
+      const money = (n) => "$" + Number(n).toFixed(2);
+      try {
+        const totals = JSON.parse(localStorage.getItem("corner-shop-totals") || "null");
+        if (totals) {
+          document.getElementById("subtotal").textContent = money(totals.subtotal);
+          document.getElementById("discount").textContent = money(totals.discount);
+          document.getElementById("tax").textContent = money(totals.tax);
+          document.getElementById("total").textContent = money(totals.total);
+        }
+      } catch {
+        /* leave the defaults in place */
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "set_id": "corner-shop-web",
+  "version": "1.0.0",
+  "requirements": [
+    { "id": "R1", "text": "The catalogue lists products cheapest first" },
+    { "id": "R2", "text": "The catalogue shows every product, including ones that are out of stock" },
+    { "id": "R3", "text": "The cart subtotal equals the sum of the line totals" },
+    { "id": "R4", "text": "A valid discount code reduces the subtotal by the advertised percentage" },
+    { "id": "R5", "text": "Tax is 8.5% of the subtotal after discount" },
+    { "id": "R6", "text": "The cart total is the discounted subtotal plus tax" },
+    { "id": "R7", "text": "The cart total is the same on the cart page and the checkout page" },
+    { "id": "R8", "text": "The checkout page shows a confirmation message and an order id" },
+    { "id": "R9", "text": "Applying a valid discount code shows no error message" },
+    { "id": "R10", "text": "Orders over $50 ship free and the page says so" },
+    { "id": "R11", "text": "The checkout action stays blocked until the cart is valid" },
+    { "id": "R12", "text": "An out-of-stock product cannot be added to the cart" },
+    { "id": "R13", "text": "A returning customer sees their previous orders" }
+  ]
+}

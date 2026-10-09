@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Corner Shop — cart</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 24px; }
+      table { border-collapse: collapse; }
+      th, td { padding: 6px 10px; border-bottom: 1px solid #ddd; text-align: left; }
+      .total { font-weight: 700; }
+      #error { color: #a00; }
+    </style>
+  </head>
+  <body>
+    <h1>Your cart</h1>
+
+    <!-- The tax and discount rates live on the page as data, so a check can
+         recompute the money from the page's own numbers instead of assuming. -->
+    <span id="tax-rate" data-testid="tax-rate" data-rate="8.5" hidden></span>
+    <span id="discount-rate" data-testid="discount-rate" data-rate="10" hidden></span>
+
+    <table>
+      <thead>
+        <tr><th>Item</th><th>Unit</th><th>Qty</th><th>Line total</th></tr>
+      </thead>
+      <tbody id="lines">
+        <tr class="line" data-sku="A-1" data-unit="25.00">
+          <td class="name">Widget A</td>
+          <td class="unit">$25.00</td>
+          <td><input class="qty" type="number" min="0" value="2" aria-label="Widget A quantity" /></td>
+          <td class="line-total" data-testid="line-total-A">$50.00</td>
+        </tr>
+        <tr class="line" data-sku="B-1" data-unit="40.00">
+          <td class="name">Widget B</td>
+          <td class="unit">$40.00</td>
+          <td><input class="qty" type="number" min="0" value="1" aria-label="Widget B quantity" /></td>
+          <td class="line-total" data-testid="line-total-B">$40.00</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p>Discount code <input id="discount-code" type="text" aria-label="Discount code" /> <button id="apply-discount">Apply</button></p>
+
+    <table>
+      <tbody>
+        <tr><td>Subtotal</td><td id="subtotal" data-testid="subtotal">$90.00</td></tr>
+        <tr><td>Discount</td><td id="discount" data-testid="discount">$0.00</td></tr>
+        <tr><td>Subtotal after discount</td><td id="net" data-testid="net">$90.00</td></tr>
+        <tr><td>Tax (8.5%)</td><td id="tax" data-testid="tax">$7.65</td></tr>
+        <tr><td>Total</td><td id="total" data-testid="total" class="total">$97.65</td></tr>
+      </tbody>
+    </table>
+
+    <p><a id="checkout" href="/checkout.html">Go to checkout</a></p>
+
+    <script>
+      const money = (n) => "$" + n.toFixed(2);
+      const taxRate = Number(document.getElementById("tax-rate").dataset.rate);
+      const discountRate = Number(document.getElementById("discount-rate").dataset.rate);
+
+      function compute() {
+        const lines = Array.from(document.querySelectorAll("tr.line"));
+        // Money is computed in whole cents so the parts and the total agree to
+        // the cent -- mixing rounded parts with an unrounded total would make
+        // the page's own numbers inconsistent, which is a defect this demo
+        // does not intend to plant.
+        let subtotalCents = 0;
+        for (const line of lines) {
+          const unitCents = Math.round(Number(line.dataset.unit) * 100);
+          const qty = Number(line.querySelector(".qty").value || 0);
+          const lineCents = unitCents * qty;
+          line.querySelector(".line-total").textContent = money(lineCents / 100);
+          subtotalCents += lineCents;
+        }
+        const code = document.getElementById("discount-code").value.trim().toUpperCase();
+        const valid = code === "SAVE10";
+        const errorBox = document.getElementById("error");
+        if (errorBox) errorBox.remove();
+        if (code !== "" && !valid) {
+          const p = document.createElement("p");
+          p.id = "error";
+          p.dataset.testid = "error";
+          p.textContent = "Invalid discount code";
+          document.getElementById("subtotal").closest("table").after(p);
+        }
+        const appliedRate = valid ? discountRate : 0;
+        const discountCents = Math.round((subtotalCents * appliedRate) / 100);
+        const netCents = subtotalCents - discountCents;
+        const taxCents = Math.round((netCents * taxRate) / 100);
+        const totalCents = netCents + taxCents;
+        document.getElementById("subtotal").textContent = money(subtotalCents / 100);
+        document.getElementById("discount").textContent = money(discountCents / 100);
+        document.getElementById("net").textContent = money(netCents / 100);
+        document.getElementById("tax").textContent = money(taxCents / 100);
+        document.getElementById("total").textContent = money(totalCents / 100);
+        localStorage.setItem(
+          "corner-shop-totals",
+          JSON.stringify({
+            subtotal: subtotalCents / 100,
+            discount: discountCents / 100,
+            net: netCents / 100,
+            tax: taxCents / 100,
+            total: totalCents / 100,
+            code: valid ? code : "",
+          }),
+        );
+        return { subtotalCents, discountCents, netCents, taxCents, totalCents };
+      }
+
+      document.getElementById("apply-discount").addEventListener("click", compute);
+      document.getElementById("discount-code").addEventListener("change", compute);
+      for (const input of document.querySelectorAll(".qty")) input.addEventListener("change", compute);
+      compute();
+    </script>
+  </body>
+</html>

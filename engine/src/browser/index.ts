@@ -180,6 +180,8 @@ export function describeBrowserDrivers(env: Env): string {
 }
 
 export { runCheckPack, renderMarkdownReport, renderConsoleSummary };
+export { digestOutcomes, digestProjection, digestScopeForRun, normalizeVolatileText, VOLATILE_TEXT_RULES } from "./digest.ts";
+export type { DigestScope, VolatileTextRule } from "./digest.ts";
 export { validatePack, validateRequirementSet, SpecError } from "./spec.ts";
 export type { CheckPack, VerificationRun, RequirementSet };
 export const BROWSER_ARTIFACT_DEFAULT = join("artifacts", "browser");
